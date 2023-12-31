@@ -44,7 +44,6 @@ fn get_db_key(signal_location: &String) -> Result<String> {
 
     let mut file = File::open(signal_config_file)?;
 
-    // Read the contents of the file into a string.
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
@@ -95,5 +94,5 @@ fn get_user_profile_folder() -> Result<String> {
 }
 
 fn read_env(var: &str) -> Result<String> {
-    env::var(var).map_err(|e| anyhow!("Error while reading {}: {}", var, e))
+    env::var(var).map_err(|e| anyhow!("Error while reading environment variable {}: {}", var, e))
 }
