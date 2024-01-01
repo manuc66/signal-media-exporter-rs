@@ -11,7 +11,7 @@ on:
 jobs:
   build:
     name: Build and Release Executable
-    runs-on: ubuntu-latest  # or another OS of your choice
+    runs-on: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
       - name: Checkout repository
