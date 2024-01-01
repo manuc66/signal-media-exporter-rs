@@ -1,32 +1,69 @@
+use crate::message_content::MessageContent;
 use anyhow::{anyhow, Result};
+//use args::Args;
+use clap::Parser;
+use mime_guess;
 use rusqlite::{Connection, OpenFlags};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json;
+use signal_config::SignalConfig;
 use std::env;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-#[derive(Serialize, Deserialize, Debug)]
-struct SignalConfig {
-    key: String,
-}
+mod args;
+mod message_content;
+mod signal_config;
 
 fn main() -> Result<()> {
+    //let args = Args::parse();
+
+    let conn = open_connection_to_signal_db()?;
+
+    let mut count_msg_with_attachment_stmt =
+        conn.prepare("select count(id) from messages where hasAttachments=1 order by id")?;
+    let msg_count =
+        count_msg_with_attachment_stmt.query_row([], |row| Ok(row.get::<_, i64>(0)?))?;
+
+    println!("Number of messages with attachments: {}", msg_count);
+
+    let mut stmt =
+        conn.prepare("SELECT json FROM messages WHERE hasAttachments = 1 ORDER BY id")?;
+
+    // Map the rows into a desired structure.
+    let message_iter = stmt.query_map([], |row| {
+        Ok(row.get::<_, String>(0)?)
+    })?;
+
+    // Iterate over the returned rows.
+    for message in message_iter {
+        let json = message?;
+        //println!("ID: {}, JSON: {}", id, json);
+
+        let message: Result<MessageContent, serde_json::Error> = serde_json::from_str(&json);
+        // Handle the result
+        match message {
+            Err(e) => {
+                eprintln!("Error parsing JSON: {}:\n {}", e, json);
+            },
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+fn open_connection_to_signal_db() -> Result<Connection> {
     let signal_location = get_signal_location()?;
+
     let db_location = get_db_location(&signal_location)?;
 
     let key = get_db_key(&signal_location)?;
 
     let conn = open_db(&db_location, key)?;
 
-    let mut stmt =
-        conn.prepare("select count(id) from messages where hasAttachments=1 order by id")?;
-    let rows = stmt.query_row([], |row| Ok(row.get::<_, i64>(0)?))?;
-
-    println!("Number of messages with attachments: {}", rows);
-
-    Ok(())
+    Ok(conn)
 }
 
 fn open_db(db_location: &String, key: String) -> Result<Connection> {
