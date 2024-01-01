@@ -2,7 +2,7 @@ use crate::message_content::MessageContent;
 use anyhow::{anyhow, Result};
 //use args::Args;
 use clap::Parser;
-use mime_guess;
+use mime_guess::get_mime_extensions_str;
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use serde_json;
@@ -32,24 +32,70 @@ fn main() -> Result<()> {
         conn.prepare("SELECT json FROM messages WHERE hasAttachments = 1 ORDER BY id")?;
 
     // Map the rows into a desired structure.
-    let message_iter = stmt.query_map([], |row| {
-        Ok(row.get::<_, String>(0)?)
-    })?;
+    let message_iter = stmt.query_map([], |row| Ok(row.get::<_, String>(0)?))?;
+
+    let k = message_iter
+        .map(|json_str_message| match json_str_message {
+            Err(e) => {
+                eprintln!("Error while reading msg: {}", e);
+                None
+            }
+            Ok(json) => {
+                let message: Result<MessageContent, serde_json::Error> =
+                    serde_json::from_str(&json);
+                match message {
+                    Err(e) => {
+                        eprintln!("Error parsing JSON: {}:\n {}", e, json);
+                        None
+                    }
+                    Ok(msg) => Some(msg),
+                }
+            }
+        })
+        .for_each(|x| {
+            x.map(|y| {
+                y.attachments.map(|a| {
+                    a.iter().for_each(|aa| {
+                        let mu: Option<Vec<String>> =
+                            get_mime_extensions_str(aa.content_type.as_str())
+                                .map(|s| s.iter().map(|&st| st.to_string()).collect());
+                        mu.map(|kk| {
+                            if (kk.iter().count() > 1) {
+                                let first_even_number = kk.iter().find(|z| {
+                                    z.as_str() == "jpg"
+                                        || z.as_str() == "png"
+                                        || z.as_str() == "mp3"
+                                        || z.as_str() == "mp4"
+                                        || z.as_str() == "htm"
+                                        || z.as_str() == "ogg"
+                                        || z.as_str() == "txt"
+                                        || z.as_str() == "bin"
+                                });
+                                match first_even_number {
+                                    Some(n) => {}
+                                    None => println!("{}: {:?}", aa.content_type.as_str(), kk),
+                                }
+                            }
+                        });
+                    })
+                })
+            });
+        });
 
     // Iterate over the returned rows.
-    for message in message_iter {
-        let json = message?;
-        //println!("ID: {}, JSON: {}", id, json);
-
-        let message: Result<MessageContent, serde_json::Error> = serde_json::from_str(&json);
-        // Handle the result
-        match message {
-            Err(e) => {
-                eprintln!("Error parsing JSON: {}:\n {}", e, json);
-            },
-            _ => {}
-        }
-    }
+    // for message in message_iter {
+    //     let json = message?;
+    //     //println!("ID: {}, JSON: {}", id, json);
+    //
+    //     let message: Result<MessageContent, serde_json::Error> = serde_json::from_str(&json);
+    //     // Handle the result
+    //     match message {
+    //         Err(e) => {
+    //             eprintln!("Error parsing JSON: {}:\n {}", e, json);
+    //         },
+    //         _ => {}
+    //     }
+    // }
 
     Ok(())
 }
